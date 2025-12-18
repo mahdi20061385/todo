@@ -204,7 +204,12 @@ body {
 .clear-btn:hover {
   background: #c62828;
 }
-
+#test-btn{
+  font-family: "behdad";
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
 
 /* دسترسی بهتر برای موبایل */
 @media (hover: none) {
