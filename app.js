@@ -1,5 +1,5 @@
 // ---------- تنظیمات ----------
-const BACKEND_BASE = "https://todo-push-backend.onrender.com"; // آدرس سرور Node (Render/Railway/...)
+const BACKEND_BASE = "https://todo-push-backend.onrender.com"; // آدرس سرور Node
 const input = document.getElementById("todo-input");
 const timeInput = document.getElementById("todo-time");
 const addBtn = document.getElementById("add-btn");
@@ -76,12 +76,12 @@ function addTodo() {
 
   // اگر زمان دارد، روی سرور زمان‌بندی کن
   if (time) {
-    const atISO = buildTodayISO(time); // تبدیل HH:MM به تاریخ امروز با تایم‌زون کاربر
+    const atISO = buildTodayISO(time);
     scheduleReminderOnServer(todoId, title, atISO).catch(console.error);
   }
 }
 
-// تبدیل "HH:MM" به ISO امروز (محلی)
+// تبدیل "HH:MM" به ISO امروز
 function buildTodayISO(hhmm) {
   const [hh, mm] = hhmm.split(":").map(Number);
   const now = new Date();
@@ -94,6 +94,10 @@ function buildTodayISO(hhmm) {
     0,
     0
   );
+  if (when.getTime() <= Date.now()) {
+    // اگر زمان گذشته بود، به فردا منتقل کن
+    when.setDate(when.getDate() + 1);
+  }
   return when.toISOString();
 }
 
@@ -162,6 +166,17 @@ async function getPushSubscription() {
   });
 }
 
+// ساخت شناسه یکتا برای دستگاه
+function getDeviceId() {
+  let id = localStorage.getItem("deviceId");
+  if (!id) {
+    id = Date.now() + "-" + Math.random().toString(36).substring(2);
+    localStorage.setItem("deviceId", id);
+  }
+  return id;
+}
+
+// ثبت Subscription روی سرور همراه با deviceId
 async function registerSubscriptionOnServer() {
   const ok = await ensureNotificationPermission();
   if (!ok) {
@@ -169,21 +184,23 @@ async function registerSubscriptionOnServer() {
     return;
   }
   const sub = await getPushSubscription();
+  const deviceId = getDeviceId();
 
   await fetch(`${BACKEND_BASE}/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(sub),
+    body: JSON.stringify({ deviceId, subscription: sub }),
   });
   console.log("Subscription registered on server");
 }
 
-// زمان‌بندی یادآوری روی سرور
+// زمان‌بندی یادآوری فقط برای همین دستگاه
 async function scheduleReminderOnServer(todoId, title, atISO) {
+  const deviceId = getDeviceId();
   await fetch(`${BACKEND_BASE}/schedule`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ todoId, title, atISO, url: location.origin }),
+    body: JSON.stringify({ todoId, title, atISO, deviceId }),
   });
 }
 
