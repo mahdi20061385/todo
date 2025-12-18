@@ -114,6 +114,20 @@ function checkReminders() {
     }
   });
 }
+//------------------------------------------------------------------------
+function testNotification() {
+  if (Notification.permission === "granted") {
+    new Notification("تست اعلان", { body: "این یک اعلان تستی است" });
+  } else {
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        new Notification("تست اعلان", { body: "این یک اعلان تستی است" });
+      }
+    });
+  }
+}
+//------------------------------------------------------------------------
 
 // چک کردن هر دقیقه
 setInterval(checkReminders, 60000);
+
