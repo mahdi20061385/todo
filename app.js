@@ -1,20 +1,21 @@
+// ---------- تنظیمات ----------
+const BACKEND_BASE = "https://todo-push-backend.onrender.com"; // آدرس سرور Node (Render/Railway/...)
 const input = document.getElementById("todo-input");
 const timeInput = document.getElementById("todo-time");
 const addBtn = document.getElementById("add-btn");
 const list = document.getElementById("todo-list");
 const clearBtn = document.getElementById("clear-btn");
+const testBtn = document.getElementById("test-btn");
 
-// گرفتن لیست از localStorage
+// ---------- LocalStorage ----------
 function getTodos() {
   return JSON.parse(localStorage.getItem("todos")) || [];
 }
-
-// ذخیره لیست در localStorage
 function saveTodos(todos) {
   localStorage.setItem("todos", JSON.stringify(todos));
 }
 
-// رندر کردن لیست
+// ---------- رندر ----------
 function renderTodos() {
   list.innerHTML = "";
   const todos = getTodos();
@@ -39,7 +40,6 @@ function renderTodos() {
     li.appendChild(text);
     li.appendChild(del);
 
-    // کلیک روی آیتم برای کامل/ناقص کردن
     li.addEventListener("click", (e) => {
       if (e.target.closest(".delete-btn")) return;
       todos[index].completed = !todos[index].completed;
@@ -47,7 +47,6 @@ function renderTodos() {
       renderTodos();
     });
 
-    // حذف آیتم
     del.addEventListener("click", () => {
       todos.splice(index, 1);
       saveTodos(todos);
@@ -58,76 +57,136 @@ function renderTodos() {
   });
 }
 
-// افزودن آیتم جدید
+// ---------- افزودن ----------
 function addTodo() {
   const title = input.value.trim();
-  const time = timeInput.value;
+  const time = timeInput.value; // HH:MM
   if (!title) {
     input.focus();
     return;
   }
+
   const todos = getTodos();
-  todos.push({ title, completed: false, time });
+  const todoId = Date.now();
+  todos.push({ id: todoId, title, completed: false, time });
   saveTodos(todos);
   input.value = "";
   timeInput.value = "";
   renderTodos();
+
+  // اگر زمان دارد، روی سرور زمان‌بندی کن
+  if (time) {
+    const atISO = buildTodayISO(time); // تبدیل HH:MM به تاریخ امروز با تایم‌زون کاربر
+    scheduleReminderOnServer(todoId, title, atISO).catch(console.error);
+  }
 }
 
-// پاکسازی کل لیست
+// تبدیل "HH:MM" به ISO امروز (محلی)
+function buildTodayISO(hhmm) {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  const now = new Date();
+  const when = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    hh,
+    mm,
+    0,
+    0
+  );
+  return when.toISOString();
+}
+
+// ---------- رویدادها ----------
+addBtn.addEventListener("click", addTodo);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") addTodo();
+});
 clearBtn.addEventListener("click", () => {
   localStorage.removeItem("todos");
   renderTodos();
 });
+testBtn.addEventListener("click", testNotification);
 
-// رویداد دکمه Add
-addBtn.addEventListener("click", addTodo);
-
-// افزودن با Enter
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") addTodo();
-});
-
-// بارگذاری اولیه
-renderTodos();
-
-// اعلان در زمان مشخص
-function checkReminders() {
-  const todos = getTodos();
-  const now = new Date();
-  const currentTime = now.toTimeString().slice(0, 5); // HH:MM
-
-  todos.forEach((todo) => {
-    if (todo.time === currentTime && !todo.notified) {
-      // درخواست اجازه اعلان
-      if (Notification.permission === "granted") {
-        new Notification("یادآوری", { body: todo.title });
-      } else if (Notification.permission !== "denied") {
-        Notification.requestPermission().then((permission) => {
-          if (permission === "granted") {
-            new Notification("یادآوری", { body: todo.title });
-          }
-        });
-      }
-      todo.notified = true; // جلوگیری از تکرار
-      saveTodos(todos);
-    }
-  });
-}
-//------------------------------------------------------------------------
+// ---------- اعلان ساده برای تست ----------
 function testNotification() {
   if (Notification.permission === "granted") {
     new Notification("تست اعلان", { body: "این یک اعلان تستی است" });
   } else {
-    Notification.requestPermission().then((permission) => {
-      if (permission === "granted") {
+    Notification.requestPermission().then((p) => {
+      if (p === "granted")
         new Notification("تست اعلان", { body: "این یک اعلان تستی است" });
-      }
     });
   }
 }
-//------------------------------------------------------------------------
 
-// چک کردن هر دقیقه
-setInterval(checkReminders, 60000);
+// ---------- Service Worker ----------
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register("sw.js")
+    .then(() => console.log("SW registered"));
+}
 
+// ---------- Push Subscription ----------
+async function ensureNotificationPermission() {
+  if (Notification.permission === "granted") return true;
+  const p = await Notification.requestPermission();
+  return p === "granted";
+}
+
+async function getVapidPublicKey() {
+  const r = await fetch(`${BACKEND_BASE}/vapidPublicKey`);
+  const { key } = await r.json();
+  return key;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i)
+    outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function getPushSubscription() {
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) return existing;
+
+  const vapidKey = await getVapidPublicKey();
+  return reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(vapidKey),
+  });
+}
+
+async function registerSubscriptionOnServer() {
+  const ok = await ensureNotificationPermission();
+  if (!ok) {
+    alert("اجازه اعلان داده نشد.");
+    return;
+  }
+  const sub = await getPushSubscription();
+
+  await fetch(`${BACKEND_BASE}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sub),
+  });
+  console.log("Subscription registered on server");
+}
+
+// زمان‌بندی یادآوری روی سرور
+async function scheduleReminderOnServer(todoId, title, atISO) {
+  await fetch(`${BACKEND_BASE}/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ todoId, title, atISO, url: location.origin }),
+  });
+}
+
+// شروع
+renderTodos();
+registerSubscriptionOnServer().catch(console.error);
