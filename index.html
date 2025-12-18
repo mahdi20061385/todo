@@ -9,14 +9,18 @@
   <body>
     <div class="todo-app">
       <header class="todo-header">
-        <h1>لیست کار های من</h1>
+        <h1>لیست کارهای من</h1>
         <div class="input-row">
           <input id="todo-input" type="text" placeholder="Title..." />
+          <input id="todo-time" type="time" />
           <button id="add-btn" type="button">افزودن</button>
         </div>
       </header>
 
       <ul id="todo-list" class="todo-list"></ul>
+
+      <!-- دکمه پاکسازی کل -->
+      <button id="clear-btn" class="clear-btn">پاکسازی همه</button>
     </div>
 
     <script src="app.js"></script>
